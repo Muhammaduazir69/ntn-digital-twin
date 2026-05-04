@@ -1,0 +1,87 @@
+--- a/contrib/ntn-cho/visualization/public/index.html
++++ b/contrib/ntn-cho/visualization/public/index.html
+@@ -50,6 +50,12 @@
+         .kpi-card.warn .kpi-value { color: #ffaa00; }
++
++        /* W10 — Live Digital-Twin toggle */
++        #live-toggle { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
++        #live-toggle .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
++        #live-toggle.on .dot { background: #00ff88; box-shadow: 0 0 8px #00ff88; animation: pulse 2s infinite; }
++        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+     </style>
+ </head>
+ <body>
+@@ -60,6 +66,17 @@
+             <h2>6G LEO Satellite Handover</h2>
++            <div class="section">
++                <div class="section-title">Digital Twin</div>
++                <div id="live-toggle">
++                    <span class="dot"></span>
++                    <label style="margin:0;flex:1">Live mode (W10)</label>
++                    <button class="btn" id="live-btn" type="button">Connect</button>
++                </div>
++                <label>Twin API URL</label>
++                <input id="twin-url" type="text" value="http://localhost:8090"
++                       style="font-family:monospace;font-size:11px">
++                <div id="twin-status" style="font-size:10px;color:#888;margin-top:4px"></div>
++            </div>
+             <div class="section">
+                 <div class="section-title">Scenario</div>
+@@ -200,6 +217,57 @@
+         viewer.scene.globe.enableLighting = true;
+
++        // ============================================================================
++        // W10 — Digital-twin live mode
++        // ============================================================================
++        let twinTimer = null;
++        const liveToggle = document.getElementById('live-toggle');
++        const liveBtn    = document.getElementById('live-btn');
++        const twinUrl    = document.getElementById('twin-url');
++        const twinStatus = document.getElementById('twin-status');
++
++        async function refreshTwin() {
++            const base = twinUrl.value.replace(/\/$/, '');
++            try {
++                const r = await fetch(base + '/constellation/state');
++                if (!r.ok) throw new Error('HTTP ' + r.status);
++                const j = await r.json();
++                // Replace the entity dataset with the live snapshot.
++                viewer.entities.values
++                    .filter(e => e.id && e.id.toString().startsWith('twin-'))
++                    .forEach(e => viewer.entities.remove(e));
++                for (const sat of j.satellites) {
++                    viewer.entities.add({
++                        id: 'twin-' + sat.sat_norad,
++                        name: sat.name,
++                        position: Cesium.Cartesian3.fromDegrees(sat.lon_deg, sat.lat_deg, sat.alt_km * 1000),
++                        point: { pixelSize: 6, color: Cesium.Color.CYAN.withAlpha(0.85) },
++                        label: { text: sat.name, font: '10px sans-serif',
++                                 fillColor: Cesium.Color.WHITE.withAlpha(0.7),
++                                 pixelOffset: new Cesium.Cartesian2(8, 0),
++                                 showBackground: true,
++                                 backgroundColor: Cesium.Color.BLACK.withAlpha(0.5) },
++                    });
++                }
++                twinStatus.textContent =
++                    `${j.count} sats @ ${j.epoch_iso}  (refreshed ${new Date().toLocaleTimeString()})`;
++            } catch (err) {
++                twinStatus.textContent = 'twin error: ' + err.message;
++            }
++        }
++
++        liveBtn.addEventListener('click', () => {
++            if (twinTimer) {
++                clearInterval(twinTimer);
++                twinTimer = null;
++                liveToggle.classList.remove('on');
++                liveBtn.textContent = 'Connect';
++            } else {
++                refreshTwin();
++                twinTimer = setInterval(refreshTwin, 5000);  // 5 s cadence
++                liveToggle.classList.add('on');
++                liveBtn.textContent = 'Disconnect';
++            }
++        });
++
+         // CZML loading
+         async function loadCzml(scenario) {
